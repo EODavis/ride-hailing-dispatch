@@ -1,0 +1,24 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  location-service:
+    build: ./location-service
+    ports:
+      - "5001:5001"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+
+  dispatch-service:
+    build: ./dispatch-service
+    ports:
+      - "5002:5002"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+
