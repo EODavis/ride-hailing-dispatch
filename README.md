@@ -1,5 +1,9 @@
 # Mini Ride-Hailing Dispatch System
 
+<img width="2720" height="1600" alt="ride_hailing_dispatch_architecture" src="https://github.com/user-attachments/assets/ffa4804c-f83d-4e6e-b644-ef527be65115" />
+
+
+
 A real-time ride matching system demonstrating WebSockets, geospatial
 queries, and — the actual point of the project — a correctly-solved
 race condition around assigning a driver to exactly one rider under
