@@ -13,12 +13,19 @@ services:
     depends_on:
       - redis
 
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "5003:5003"
+
   dispatch-service:
     build: ./dispatch-service
     ports:
       - "5002:5002"
     environment:
       - REDIS_URL=redis://redis:6379
+      - PAYMENT_SERVICE_URL=http://payment-service:5003
     depends_on:
       - redis
+      - payment-service
 

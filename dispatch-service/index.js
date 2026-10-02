@@ -3,6 +3,7 @@ const { WebSocketServer } = require('ws');
 const Redis = require('ioredis');
 const fs = require('fs');
 const path = require('path');
+const { chargeRiderWithRetries } = require('./payment');
 
 const app = express();
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
@@ -44,8 +45,9 @@ wss.on('connection', (ws) => {
   });
 });
 
+const RIDE_FARE = 15.0; 
+
 async function handleRideRequest(riderId, lat, lng, riderWs) {
-  // GEOSEARCH: find drivers within 5km, sorted nearest-first
   const candidates = await redis.geosearch(
     'drivers:locations',
     'FROMLONLAT', lng, lat,
@@ -57,24 +59,51 @@ async function handleRideRequest(riderId, lat, lng, riderWs) {
     return riderWs.send(JSON.stringify({ type: 'no-drivers-available' }));
   }
 
-  // Try to claim drivers nearest-first, until one succeeds
   for (const driverId of candidates) {
     const claimed = await redis.eval(claimDriverScript, 1, `driver:${driverId}`);
 
     if (claimed === 1) {
       const rideId = `${riderId}-${Date.now()}`;
+      console.log(`Driver ${driverId} claimed for ride ${rideId} — attempting payment`);
 
-      // Tell Location Service (via pub/sub) to push this to the driver's actual socket
-      await publisher.publish(
-        `driver-notify:${driverId}`,
-        JSON.stringify({ type: 'ride-assigned', rideId, riderId, pickupLat: lat, pickupLng: lng })
-      );
+      try {
+        const paymentResult = await chargeRiderWithRetries(rideId, riderId, RIDE_FARE);
 
-      riderWs.send(JSON.stringify({ type: 'matched', rideId, driverId }));
-      console.log(`Matched rider ${riderId} with driver ${driverId} (ride ${rideId})`);
-      return;
+        // Payment succeeded — proceed exactly as in Project 15
+        await publisher.publish(
+          `driver-notify:${driverId}`,
+          JSON.stringify({ type: 'ride-assigned', rideId, riderId, pickupLat: lat, pickupLng: lng })
+        );
+
+        riderWs.send(JSON.stringify({
+          type: 'matched',
+          rideId,
+          driverId,
+          payment: paymentResult.data,
+        }));
+
+        console.log(`Ride ${rideId} fully confirmed — driver ${driverId}, payment ${paymentResult.data.transactionId}`);
+        return;
+
+      } catch (err) {
+        // Payment failed after retries and/or the breaker is open — this is the saga's compensating step
+        console.log(`Payment failed for ride ${rideId} after retries — compensating: releasing driver ${driverId}`);
+
+        await redis.hset(`driver:${driverId}`, 'status', 'available');
+
+        await publisher.publish(
+          `driver-notify:${driverId}`,
+          JSON.stringify({ type: 'ride-cancelled', reason: 'payment failed' })
+        );
+
+        riderWs.send(JSON.stringify({
+          type: 'payment-failed',
+          message: 'We could not process payment for this ride. Please try again.',
+        }));
+
+        return; // Don't try the next candidate driver — the rider's payment issue won't fix itself by finding a different driver
+      }
     }
-    // If claim failed (someone else grabbed this driver microseconds earlier), try the next candidate
   }
 
   riderWs.send(JSON.stringify({ type: 'no-drivers-available', reason: 'all nearby drivers were just claimed' }));
