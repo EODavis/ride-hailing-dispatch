@@ -73,7 +73,6 @@ test-clients/ - Simulated driver/rider WebSocket clients for testing
   actual environment variables directly (`docker compose run --rm ... env`)
   before assuming an infrastructure problem.
   
-<<<<<<< HEAD
 ## Payments, Resilience, and the Saga Pattern (Project 16 extension)
 
 Once a driver is claimed, Dispatch Service charges the rider via a
@@ -117,5 +116,3 @@ so the undo logic has to be written by hand.
 dispatch-service/
   payment.js                - Retry loop + circuit breaker wrapping payment calls
 ```
-=======
->>>>>>> cf9f6883e022f7d60a4fb7f78e62ac5e57216e75
