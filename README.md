@@ -73,3 +73,49 @@ test-clients/ - Simulated driver/rider WebSocket clients for testing
   actual environment variables directly (`docker compose run --rm ... env`)
   before assuming an infrastructure problem.
   
+<<<<<<< HEAD
+## Payments, Resilience, and the Saga Pattern (Project 16 extension)
+
+Once a driver is claimed, Dispatch Service charges the rider via a
+new **Payment Service** — a deliberately unreliable dependency (~40%
+random failure rate, random latency) used to prove the resilience
+patterns below actually work, not just look correct on paper.
+
+### Idempotency
+
+Dispatch Service generates one `rideId` per ride and sends it as an
+`Idempotency-Key` header on every payment attempt for that ride — including
+retries. Payment Service caches the result of the first successful charge
+per key, so a retried request can never double-charge the rider.
+
+### Retries with exponential backoff
+
+A failed payment attempt is retried up to 3 times, waiting 200ms, then
+400ms, then 800ms between attempts — giving a struggling dependency room
+to recover instead of hammering it immediately again.
+
+### Circuit breaker
+
+Payment calls go through an `opossum` circuit breaker. After enough
+consecutive failures, the breaker **opens**: further calls fail instantly
+with no network attempt at all, for a 10-second cooldown, after which
+exactly one trial request (**half-open**) decides whether to close
+(resume normal calls) or reopen.
+
+### Saga compensation
+
+If payment ultimately fails (after retries, or because the breaker is
+open), the already-claimed driver is NOT left stuck — Dispatch Service
+explicitly releases them back to `available` in Redis, and notifies
+both the driver and rider. This is a manually-written compensating
+action: there is no cross-service database transaction to roll back,
+so the undo logic has to be written by hand.
+
+## Updated Project Structure
+
+```payment-service/          - Simulated (flaky) payment provider, idempotency cache
+dispatch-service/
+  payment.js                - Retry loop + circuit breaker wrapping payment calls
+```
+=======
+>>>>>>> cf9f6883e022f7d60a4fb7f78e62ac5e57216e75
